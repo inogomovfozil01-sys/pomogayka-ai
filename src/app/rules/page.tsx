@@ -1,13 +1,73 @@
 import { prisma } from "@/lib/prisma";
 import { ShieldCheck, AlertTriangle, MessageSquare, Ban } from "lucide-react";
 
-export const revalidate = 60; // ISR cache
+export const dynamic = "force-dynamic";
+
+const FALLBACK_RULES = [
+  {
+    id: "r1",
+    order: 1,
+    title: "1. Тематическое общение и взаимоуважение",
+    description:
+      "Общайтесь строго по теме учебы и домашних заданий. Запрещены оскорбления, буллинг, дискриминация, токсичность и агрессия в адрес участников и преподавателей.",
+    penalty: "WARN",
+  },
+  {
+    id: "r2",
+    order: 2,
+    title: "2. Запрет нецензурной лексики (мата)",
+    description:
+      "Мат строго запрещен в любых формах (включая завуалированный, сокращения и транслит). Наше сообщество создано для школьников всех возрастов.",
+    penalty: "WARN",
+  },
+  {
+    id: "r3",
+    order: 3,
+    title: "3. Спам, флуд и посторонняя реклама",
+    description:
+      "Запрещена реклама каналов, сторонних ботов, сервисов, реферальных ссылок, а также массовый флуд стикерами, гифками или бессмысленными сообщениями.",
+    penalty: "MUTE",
+  },
+  {
+    id: "r4",
+    order: 4,
+    title: "4. Соблюдение тем и классов (Telegram Topics)",
+    description:
+      "Отправляйте задания строго в ветку (топик) своего класса или в соответствующий предмет. Не засоряйте чужие классы непрофильными вопросами.",
+    penalty: "WARN",
+  },
+  {
+    id: "r5",
+    order: 5,
+    title: "5. Академическая этика и понимание",
+    description:
+      "Цель «Помогайки» — научить и объяснить, а не просто дать списать. Задавайте вопросы по шагам решений, старайтесь разобраться в материале.",
+    penalty: "WARN",
+  },
+  {
+    id: "r6",
+    order: 6,
+    title: "6. Запрет шок-контента, 18+ и вредоносных ссылок",
+    description:
+      "Публикация любого порнографического, жестокого контента, фишинговых сайтов или вирусов карается мгновенным вечным баном без предупреждений.",
+    penalty: "BAN",
+  },
+];
 
 export default async function RulesPage() {
-  const rules = await prisma.rule.findMany({
-    where: { active: true },
-    orderBy: { order: "asc" },
-  });
+  let rules = FALLBACK_RULES;
+  try {
+    const dbRules = await prisma.rule.findMany({
+      where: { active: true },
+      orderBy: { order: "asc" },
+    });
+    if (dbRules && dbRules.length > 0) {
+      rules = dbRules;
+    }
+  } catch (err) {
+    console.warn("Using fallback rules due to database error:", err);
+  }
+
 
   return (
     <div className="container mx-auto px-4 sm:px-6 py-12 max-w-4xl space-y-10">

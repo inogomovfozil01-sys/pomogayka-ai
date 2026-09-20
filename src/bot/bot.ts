@@ -15,10 +15,10 @@ import {
 } from "./handlers/moderation";
 
 export function createBot(token?: string) {
-  const botToken = token || process.env.TELEGRAM_BOT_TOKEN;
-  if (!botToken) {
-    throw new Error("TELEGRAM_BOT_TOKEN is not defined in environment");
-  }
+  const botToken =
+    token ||
+    process.env.TELEGRAM_BOT_TOKEN ||
+    "0000000000:AAPlaceholderTokenForBuildPhase00000";
 
   const bot = new Bot(botToken, {
     client: {
@@ -217,3 +217,20 @@ export function createBot(token?: string) {
 
   return bot;
 }
+
+let cachedBot: Bot | null = null;
+let cachedToken: string | null = null;
+
+export function getBot(token?: string): Bot {
+  const activeToken =
+    token ||
+    process.env.TELEGRAM_BOT_TOKEN ||
+    "0000000000:AAPlaceholderTokenForBuildPhase00000";
+
+  if (!cachedBot || cachedToken !== activeToken) {
+    cachedBot = createBot(activeToken);
+    cachedToken = activeToken;
+  }
+  return cachedBot;
+}
+

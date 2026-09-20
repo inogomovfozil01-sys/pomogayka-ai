@@ -1,10 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createBot } from "@/bot/bot";
+import { getBot } from "@/bot/bot";
 
-const bot = createBot();
+export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   try {
+    const token = process.env.TELEGRAM_BOT_TOKEN;
+    if (!token) {
+      console.warn("TELEGRAM_BOT_TOKEN is not configured in environment");
+      return NextResponse.json(
+        { error: "TELEGRAM_BOT_TOKEN is not configured" },
+        { status: 503 }
+      );
+    }
+
     const secretHeader = req.headers.get("x-telegram-bot-api-secret-token");
     const configuredSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
 
@@ -13,6 +22,7 @@ export async function POST(req: NextRequest) {
     }
 
     const update = await req.json();
+    const bot = getBot(token);
 
     // Process update asynchronously so webhook responds in milliseconds
     bot.handleUpdate(update).catch((err) => {
@@ -30,6 +40,7 @@ export async function GET() {
   return NextResponse.json({
     status: "active",
     bot: "Помогайка AI Webhook",
+    configured: Boolean(process.env.TELEGRAM_BOT_TOKEN),
     timestamp: new Date().toISOString(),
   });
 }
