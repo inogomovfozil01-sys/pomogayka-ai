@@ -1,0 +1,275 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id            String    @id @default(uuid())
+  telegramId    BigInt?   @unique
+  username      String?
+  firstName     String?
+  lastName      String?
+  photoUrl      String?
+  role          String    @default("USER") // USER, MODERATOR, ADMIN, OWNER
+  grade         Int?      // 1..11
+  language      String    @default("ru")   // ru, uz, en
+  learningMode  String    @default("SOLUTION") // ONLY_ANSWER, SOLUTION, TEACH_ME
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  messages           Message[]
+  aiConversations    AIConversation[]
+  aiRequests         AIRequest[]
+  warningsReceived   Warning[]        @relation("UserWarnings")
+  warningsIssued     Warning[]        @relation("AdminIssuedWarnings")
+  bansReceived       Ban[]            @relation("UserBans")
+  reportsFiled       Report[]         @relation("ReporterUser")
+  reportsTargeted    Report[]         @relation("ReportedUser")
+  auditActions       AuditLog[]
+  sessions           SiteSession[]
+
+  @@index([telegramId])
+}
+
+model TelegramChat {
+  id             String          @id @default(uuid())
+  telegramChatId BigInt          @unique
+  title          String
+  type           String          @default("supergroup")
+  isForum        Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  topics   TelegramTopic[]
+  messages Message[]
+
+  @@index([telegramChatId])
+}
+
+model TelegramTopic {
+  id              String        @id @default(uuid())
+  chatId          String
+  chat            TelegramChat  @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  threadId        Int           // message_thread_id in Telegram
+  name            String
+  grade           Int?          // 1..11
+  aiMode          String        @default("PHOTOS_AND_HELP") // OFF, MENTION_ONLY, HELP_REQUESTS, PHOTOS_AND_HELP, ALWAYS_ASSIST
+  humanFirst      Boolean       @default(false)
+  humanFirstDelay Int           @default(60) // seconds: 0, 30, 60, 120, 300
+  enabled         Boolean       @default(true)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@unique([chatId, threadId])
+  @@index([chatId, threadId])
+}
+
+model Message {
+  id                String        @id @default(uuid())
+  chatId            String?
+  chat              TelegramChat? @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  threadId          Int?
+  userId            String?
+  user              User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  telegramMessageId Int
+  text              String?       @db.Text
+  replyToId         Int?
+  mediaGroupId      String?       // Telegram media_group_id for albums
+  hasMedia          Boolean       @default(false)
+  isBot             Boolean       @default(false)
+  createdAt         DateTime      @default(now())
+
+  media Media[]
+
+  @@index([chatId, threadId, createdAt])
+  @@index([userId, threadId, createdAt])
+  @@index([mediaGroupId])
+}
+
+model Media {
+  id           String   @id @default(uuid())
+  messageId    String?
+  message      Message? @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  fileId       String
+  fileUniqueId String?
+  fileUrl      String?
+  mimeType     String   @default("image/jpeg")
+  width        Int?
+  height       Int?
+  fileSize     Int?
+  createdAt    DateTime @default(now())
+
+  @@index([messageId])
+  @@index([fileUniqueId])
+}
+
+model AIConversation {
+  id        String   @id @default(uuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chatId    String?
+  threadId  Int?
+  subject   String?
+  grade     Int?
+  mode      String   @default("SOLUTION") // ONLY_ANSWER, SOLUTION, TEACH_ME, VERIFY
+  title     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  requests  AIRequest[]
+  solutions Solution[]
+
+  @@index([userId, createdAt])
+  @@index([chatId, threadId])
+}
+
+model AIRequest {
+  id             String          @id @default(uuid())
+  conversationId String?
+  conversation   AIConversation? @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  userId         String?
+  user           User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  prompt         String          @db.Text
+  model          String          @default("gemini-2.5-flash")
+  tokensInput    Int             @default(0)
+  tokensOutput   Int             @default(0)
+  latencyMs      Int             @default(0)
+  status         String          @default("SUCCESS") // SUCCESS, ERROR, RETRY, RATE_LIMITED
+  error          String?         @db.Text
+  createdAt      DateTime        @default(now())
+
+  solution Solution?
+
+  @@index([userId, createdAt])
+  @@index([status])
+}
+
+model Solution {
+  id                   String          @id @default(uuid())
+  requestId            String?         @unique
+  request              AIRequest?      @relation(fields: [requestId], references: [id], onDelete: SetNull)
+  conversationId       String?
+  conversation         AIConversation? @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  subject              String
+  grade                Int?
+  taskNumbers          String          // e.g. "8, 9"
+  conditionText        String?         @db.Text
+  stepByStep           String          @db.Text
+  finalAnswer          String          @db.Text
+  explanation          String?         @db.Text
+  mode                 String          @default("SOLUTION")
+  language             String          @default("ru")
+  isVerified           Boolean?
+  verificationFeedback String?         @db.Text
+  createdAt            DateTime        @default(now())
+
+  @@index([subject, grade])
+}
+
+model Warning {
+  id             String   @id @default(uuid())
+  telegramUserId BigInt
+  targetUserId   String?
+  targetUser     User?    @relation("UserWarnings", fields: [targetUserId], references: [id], onDelete: SetNull)
+  issuedBy       BigInt
+  issuerUserId   String?
+  issuerUser     User?    @relation("AdminIssuedWarnings", fields: [issuerUserId], references: [id], onDelete: SetNull)
+  reason         String
+  chatId         BigInt?
+  messageId      Int?
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+
+  @@index([telegramUserId, active])
+}
+
+model Ban {
+  id             String    @id @default(uuid())
+  telegramUserId BigInt
+  targetUserId   String?
+  targetUser     User?     @relation("UserBans", fields: [targetUserId], references: [id], onDelete: SetNull)
+  issuedBy       BigInt
+  reason         String
+  chatId         BigInt?
+  untilDate      DateTime?
+  active         Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+
+  @@index([telegramUserId, active])
+}
+
+model Report {
+  id             String   @id @default(uuid())
+  reporterUserId BigInt
+  reporterId     String?
+  reporter       User?    @relation("ReporterUser", fields: [reporterId], references: [id], onDelete: SetNull)
+  targetUserId   BigInt?
+  reportedId     String?
+  reported       User?    @relation("ReportedUser", fields: [reportedId], references: [id], onDelete: SetNull)
+  chatId         BigInt?
+  messageId      Int?
+  reason         String
+  status         String   @default("OPEN") // OPEN, REVIEWING, RESOLVED, REJECTED
+  resolution     String?  @db.Text
+  handledBy      BigInt?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([status, createdAt])
+}
+
+model Admin {
+  id             String   @id @default(uuid())
+  telegramUserId BigInt   @unique
+  username       String?
+  name           String?
+  role           String   @default("ADMIN") // OWNER, ADMIN, MODERATOR
+  createdAt      DateTime @default(now())
+}
+
+model Rule {
+  id          String   @id @default(uuid())
+  title       String
+  description String   @db.Text
+  category    String   // DISCIPLINE, ACADEMIC, SAFETY, ADVERTISING
+  penalty     String   // WARN, MUTE, BAN
+  order       Int      @default(0)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  action    String
+  actorId   BigInt
+  actorUser String?
+  user      User?    @relation(fields: [actorUser], references: [id], onDelete: SetNull)
+  targetId  BigInt?
+  details   Json?
+  createdAt DateTime @default(now())
+
+  @@index([action, createdAt])
+}
+
+model SiteSession {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([token])
+}
+
+model Setting {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  value     Json
+  updatedAt DateTime @updatedAt
+}
